@@ -71,6 +71,9 @@ class WildfireDataset(torch.utils.data.Dataset):
         
         cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
 
+        # Only keep elevation and previous fire mask
+        cropped_features = cropped_features[[0, 11], :, :]
+
         sample = (torch.from_numpy(cropped_features), torch.from_numpy(np.expand_dims(cropped_label, axis=0)))
 
         return sample
@@ -93,15 +96,19 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
         print("finished initializing")
 
     def __len__(self):
-        return len(self.good_indices) * 4
+        return len(self.good_indices) * 3
 
     def __getitem__(self, index):
         
-        index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) * 3 else self._get_random_oversample_index()
+        index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) * 2 else self._get_random_oversample_index()
             
         cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
 
-        rotations = [90, 180, 270]
+        # Only keep elevation and previous fire mask
+        cropped_features = cropped_features[[0, 11], :, :]
+
+        # Perform random rotations
+        rotations = [0, 90, 180, 270]
         random_rotation = random.choice(rotations)
         cropped_features = torchvision.transforms.functional.rotate(torch.from_numpy(cropped_features), random_rotation)
         cropped_label = torchvision.transforms.functional.rotate(torch.from_numpy(np.expand_dims(cropped_label, axis=0)), random_rotation)
@@ -112,7 +119,7 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
     
     def _find_samples_for_oversampling(self):
         oversample_indices = []
-        threshold = 0.01 # Desired percentage of fire pixels in the target fire masks
+        threshold = 0.05 # Desired percentage of fire pixels in the target fire masks
         
         #print(len(self.good_indices))
         for i in range(len(self.good_indices)):

@@ -102,7 +102,7 @@ def train(gpu, args):
     #model = LogisticRegression(12288, 1024)
     #model = BinaryClassifierCNN(32)
     #model = ConvolutionalAutoencoder()
-    model = UNet(12, 1, True)
+    model = UNet(2, 1, True)
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     #criterion = nn.BCELoss().cuda(gpu)
