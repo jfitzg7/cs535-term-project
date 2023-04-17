@@ -50,6 +50,7 @@ class WildfireDataset(torch.utils.data.Dataset):
     def __init__(self, data_filename, labels_filename):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
         self.crop_size = 32
+        random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
         
         print(f"data size: {self.data.nbytes}")
@@ -79,6 +80,7 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
     def __init__(self, data_filename, labels_filename, transform=None):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
         self.crop_size = 32
+        random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
         
         self.oversample_indices = self._find_samples_for_oversampling()
@@ -110,7 +112,7 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
     
     def _find_samples_for_oversampling(self):
         oversample_indices = []
-        threshold = 0.05 # Desired percentage of fire pixels in the target fire masks
+        threshold = 0.01 # Desired percentage of fire pixels in the target fire masks
         
         #print(len(self.good_indices))
         for i in range(len(self.good_indices)):

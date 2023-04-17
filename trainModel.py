@@ -72,22 +72,29 @@ def train(gpu, args):
     }
 
     samplers = {
-        x: torch.utils.data.distributed.DistributedSampler(
-            datasets[x],
+        TRAIN: torch.utils.data.distributed.DistributedSampler(
+            datasets[TRAIN],
             num_replicas=args.world_size,
             rank=rank
-        ) for x in [TRAIN, VAL]
+        )
     }
 
     dataLoaders = {
-        x: torch.utils.data.DataLoader(
-            dataset=datasets[x],
+        TRAIN: torch.utils.data.DataLoader(
+            dataset=datasets[TRAIN],
             batch_size=batch_size,
             shuffle=False,
             num_workers=0,
             pin_memory=True,
-            sampler=samplers[x]
-        ) for x in [TRAIN, VAL]
+            sampler=samplers[TRAIN]
+        ),
+        VAL: torch.utils.data.DataLoader(
+            dataset=datasets[VAL],
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+        )
     }
 
     torch.manual_seed(0)
@@ -146,7 +153,7 @@ def train(gpu, args):
             loss.backward()
             optimizer.step()
 
-            if i % 10 == 0:
+            if i % 20 == 0:
                 print('Epoch [{}/{}], Steps [{}/{}], Samples processed {}, Loss: {:.4f}'.format(
                     epoch + 1,
                     args.epochs,
