@@ -2,6 +2,7 @@ import pickle
 import torch
 import numpy as np
 import random
+import torchvision
 
 def unpickle(f):
     with open(f, 'rb') as fo:
