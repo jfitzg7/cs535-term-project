@@ -95,7 +95,7 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         
-        index = self.good_indices[index] if index < len(self.good_indices) * 3 else self._get_random_oversample_index()
+        index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) * 3 else self._get_random_oversample_index()
             
         cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
 

@@ -61,10 +61,14 @@ def train(gpu, args):
     # Data loading code
 
     datasets = {
-        x: AugmentedWildfireDataset(
-            f"{DATASET_PATH}/{x}.data",
-            f"{DATASET_PATH}/{x}.labels",
-        ) for x in [TRAIN,VAL]
+        TRAIN: AugmentedWildfireDataset(
+            f"{DATASET_PATH}/{TRAIN}.data",
+            f"{DATASET_PATH}/{TRAIN}.labels",
+        ),
+        VAL: WildfireDataset(
+            f"{DATASET_PATH}/{VAL}.data",
+            f"{DATASET_PATH}/{VAL}.labels",
+        )
     }
 
     samplers = {
@@ -142,7 +146,7 @@ def train(gpu, args):
             loss.backward()
             optimizer.step()
 
-            if i % 1 == 0:
+            if i % 10 == 0:
                 print('Epoch [{}/{}], Steps [{}/{}], Samples processed {}, Loss: {:.4f}'.format(
                     epoch + 1,
                     args.epochs,
@@ -205,11 +209,11 @@ def train(gpu, args):
 
     print("Reached end of train function")
 
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-train-loss.history', 'wb') as handle:
+    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-train-loss-Rank-{rank}.history', 'wb') as handle:
         pickle.dump(train_loss_history, handle)
     print("Successfully pickled the training loss history")
 
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-validation-loss.history', 'wb') as handle:
+    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-validation-loss-Rank-{rank}.history', 'wb') as handle:
         pickle.dump(val_loss_history, handle)
     print("Successfully pickled the validation loss history")
         
