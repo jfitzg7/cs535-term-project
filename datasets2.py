@@ -47,18 +47,23 @@ def find_good_samples(labels, crop_map, crop_size):
 
 
 class WildfireDataset(torch.utils.data.Dataset):
-    def __init__(self, data_filename, labels_filename):
+    def __init__(self, data_filename, labels_filename, features=None):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
         self.crop_size = 32
+
         random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
+
+        if features:
+            assert isinstance(features, list)
+        self.features = sorted(features) if features else None
         
         print(f"data size: {self.data.nbytes}")
         print(f"label size: {self.labels.nbytes}")
         print(f"crop_map size: {self.crop_map.nbytes}")
         print(f"good_indices size: {self.good_indices.nbytes}")
         print(f"total size: {self.data.nbytes + self.labels.nbytes + self.crop_map.nbytes + self.good_indices.nbytes}")
-        print("finished initializing")
+        print("finished initializing WildfireDataset")
         
     def __len__(self):
         return len(self.good_indices)
@@ -71,20 +76,74 @@ class WildfireDataset(torch.utils.data.Dataset):
         
         cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
 
-        # Only keep elevation and previous fire mask
-        cropped_features = cropped_features[[0, 11], :, :]
+        # Only keep specific features
+        if self.features:
+            cropped_features = cropped_features[self.features, :, :]
 
         sample = (torch.from_numpy(cropped_features), torch.from_numpy(np.expand_dims(cropped_label, axis=0)))
 
         return sample
 
 
-class AugmentedWildfireDataset(torch.utils.data.Dataset):
-    def __init__(self, data_filename, labels_filename, transform=None):
+class RotatedWildfireDataset(torch.utils.data.Dataset):
+    # This dataset probably doesn't work if you use the wind direction feature
+    def __init__(self, data_filename, labels_filename, features=None):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
         self.crop_size = 32
+
         random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
+        
+        if features:
+            assert isinstance(features, list)
+        self.features = sorted(features) if features else None
+        
+        #self.oversample_indices = self._find_samples_for_oversampling()
+        
+        print(f"data size: {self.data.nbytes}")
+        print(f"label size: {self.labels.nbytes}")
+        print(f"crop_map size: {self.crop_map.nbytes}")
+        print(f"good_indices size: {self.good_indices.nbytes}")
+        print(f"total size: {self.data.nbytes + self.labels.nbytes + self.crop_map.nbytes + self.good_indices.nbytes}")
+        print("finished initializing RotatedWildfireDataset")
+
+    def __len__(self):
+        return len(self.good_indices) * 4
+
+    def __getitem__(self, index):
+        rotation_index = index // len(self.good_indices)
+        
+        #index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) * 2 else self._get_random_oversample_index()
+        index = self.good_indices[index % len(self.good_indices)]
+            
+        cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
+
+        # Only keep specific features
+        if self.features:
+            cropped_features = cropped_features[self.features, :, :]
+
+        # Perform rotation
+        rotations = [0, 90, 180, 270]
+        rotation = rotations[rotation_index]
+        cropped_features = torchvision.transforms.functional.rotate(torch.from_numpy(cropped_features), rotation)
+        cropped_label = torchvision.transforms.functional.rotate(torch.from_numpy(np.expand_dims(cropped_label, axis=0)), rotation)
+
+        sample = (cropped_features, cropped_label)
+        
+        return sample
+
+
+class OversampledWildfireDataset(torch.utils.data.Dataset):
+    def __init__(self, data_filename, labels_filename, features=None):
+        self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
+        self.crop_size = 32
+
+        random.seed(1)
+        self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
+
+        if features:
+            assert isinstance(features, list)
+        self.features = sorted(features) if features else None
         
         self.oversample_indices = self._find_samples_for_oversampling()
         
@@ -93,35 +152,29 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
         print(f"crop_map size: {self.crop_map.nbytes}")
         print(f"good_indices size: {self.good_indices.nbytes}")
         print(f"total size: {self.data.nbytes + self.labels.nbytes + self.crop_map.nbytes + self.good_indices.nbytes}")
-        print("finished initializing")
+        print("finished initializing OversampledWildfireDataset")
 
     def __len__(self):
-        return len(self.good_indices) * 3
+        return len(self.good_indices) * 2
 
     def __getitem__(self, index):
         
-        index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) * 2 else self._get_random_oversample_index()
+        index = self.good_indices[index % len(self.good_indices)] if index < len(self.good_indices) else self._get_random_oversample_index()
             
         cropped_features, cropped_label = get_cropped_sample(index, self.crop_map, self.crop_size, self.data, self.labels)
 
-        # Only keep elevation and previous fire mask
-        cropped_features = cropped_features[[0, 11], :, :]
-
-        # Perform random rotations
-        rotations = [0, 90, 180, 270]
-        random_rotation = random.choice(rotations)
-        cropped_features = torchvision.transforms.functional.rotate(torch.from_numpy(cropped_features), random_rotation)
-        cropped_label = torchvision.transforms.functional.rotate(torch.from_numpy(np.expand_dims(cropped_label, axis=0)), random_rotation)
+        # Only keep specific features
+        if self.features:
+            cropped_features = cropped_features[self.features, :, :]
 
         sample = (cropped_features, cropped_label)
         
         return sample
-    
+
     def _find_samples_for_oversampling(self):
         oversample_indices = []
         threshold = 0.05 # Desired percentage of fire pixels in the target fire masks
         
-        #print(len(self.good_indices))
         for i in range(len(self.good_indices)):
             index = self.good_indices[i]
             x_shift, y_shift = self.crop_map[index]
@@ -132,11 +185,39 @@ class AugmentedWildfireDataset(torch.utils.data.Dataset):
             for key, value in target_counts_map.items():
                 if key == 1 and (value/1024) >= threshold:
                     oversample_indices.append(index)
-        #print(len(oversample_indices))
-        #print(oversample_indices)
         return oversample_indices
         
     
     def _get_random_oversample_index(self):
         return random.choice(self.oversample_indices)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     

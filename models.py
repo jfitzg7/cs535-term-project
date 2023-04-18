@@ -9,17 +9,18 @@ class LogisticRegression(torch.nn.Module):
         self.linear = torch.nn.Linear(input_dim, output_dim)
     def forward(self, x):
         x = x.view(x.size(0), -1)
-        x = torch.sigmoid(self.linear(x))
+        x = self.linear(x)
         x = x.reshape(-1, 1, 32, 32)
         return x
 
 
 class BinaryClassifierCNN(torch.nn.Module):
-    def __init__(self, image_size):
+    def __init__(self, in_channels, image_size):
         flattened_conv2_output_dimensions = (image_size//4)**2
+        out_channels = image_size**2
         super(BinaryClassifierCNN, self).__init__()
         self.conv1 = torch.nn.Sequential(
-            torch.nn.Conv2d(12, 16, 5, 1, 2),
+            torch.nn.Conv2d(in_channels, 16, 5, 1, 2),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(2)
         )
@@ -29,8 +30,7 @@ class BinaryClassifierCNN(torch.nn.Module):
             torch.nn.MaxPool2d(2)
         )
         self.out = torch.nn.Sequential(
-            torch.nn.Linear(32 * flattened_conv2_output_dimensions, 1024), # 1024 pixels, output represents probability of fire.
-            torch.nn.Sigmoid()
+            torch.nn.Linear(32 * flattened_conv2_output_dimensions, out_channels)
         )
     def forward(self, x):
         x = self.conv1(x)
@@ -85,8 +85,7 @@ class ConvolutionalAutoencoder(torch.nn.Module):
             torch.nn.ConvTranspose2d(16, 16, 3, 2, 0), # 15 x 15 -> 31 x 31
             torch.nn.LeakyReLU(0.01),
             torch.nn.ConvTranspose2d(16, 1, 3, 1, 0), # 31 x 31 -> 33 x 33
-            Trim(),
-            torch.nn.Sigmoid()
+            Trim()
         )
         
     def forward(self, x):
