@@ -27,7 +27,7 @@ SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--master', default='mercury',
+    parser.add_argument('-m','--master', default='uranus',
                         help='master node')
     parser.add_argument('-p', '--port', default='30437',
                          help = 'master node')
@@ -61,13 +61,15 @@ def train(gpu, args):
     # Data loading code
 
     datasets = {
-        TRAIN: AugmentedWildfireDataset(
+        TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
+            features=[0, 8, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
+            features=[0, 8, 11]
         )
     }
 
@@ -99,14 +101,15 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    #model = LogisticRegression(12288, 1024)
-    #model = BinaryClassifierCNN(32)
+    
+    #model = LogisticRegression(input_dim=12 * 32 * 32, output_dim=32 * 32)
+    #model = BinaryClassifierCNN(in_channels=3, image_size=32)
     #model = ConvolutionalAutoencoder()
-    model = UNet(2, 1, True)
+    model = UNet(3, 1, True)
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     #criterion = nn.BCELoss().cuda(gpu)
-    criterion = nn.BCEWithLogitsLoss().cuda(gpu) # This is for UNet
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([75])).cuda(gpu) # This is for UNet
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -190,7 +193,8 @@ def train(gpu, args):
                 preds = torch.round(torch.sigmoid(outputs)) # UNet output isn't going through sigmoid, loss func handles it
                 #preds = torch.round(outputs)
 
-                loss = criterion(outputs, labels)
+                #loss = criterion(outputs, labels)
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
                 loss_val += loss.item() # batch loss
                 acc_val += torch.sum(preds == labels.data)
