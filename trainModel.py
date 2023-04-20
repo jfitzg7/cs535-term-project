@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.distributed as dist
 from models import *
 from datasets2 import *
+from lossFunction import *
 import platform
 import copy
 import numpy as np
@@ -21,8 +22,8 @@ VAL = 'validation'
 MASTER_RANK = 0
 SAVE_INTERVAL =1
 
-DATASET_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/data/next-day-wildfire-spread'
-SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
+DATASET_PATH = '/s/chopin/a/grad/jeyost/School/CS535/cs535-term-project/data/next-day-wildfire-spread'
+SAVE_MODEL_PATH = '/s/chopin/a/grad/jeyost/School/CS535/cs535-term-project/savedModels'
 
 
 def main():
@@ -109,7 +110,10 @@ def train(gpu, args):
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     #criterion = nn.BCELoss().cuda(gpu)
+    criterion = nn.CosineEmbeddingLoss()
     criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([75])).cuda(gpu) # This is for UNet
+    # criterion = CosineDistanceLoss()
+    # criterion = WeightedCovarianceLoss()
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -193,7 +197,7 @@ def train(gpu, args):
                 preds = torch.round(torch.sigmoid(outputs)) # UNet output isn't going through sigmoid, loss func handles it
                 #preds = torch.round(outputs)
 
-                #loss = criterion(outputs, labels)
+                loss = criterion(outputs, labels)
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
                 loss_val += loss.item() # batch loss
