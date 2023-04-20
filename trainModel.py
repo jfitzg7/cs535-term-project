@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 from models import *
-from datasets2 import *
+from datasets import *
 import platform
 import copy
 import numpy as np
@@ -19,7 +19,7 @@ TRAIN = 'train'
 VAL = 'validation'
 
 MASTER_RANK = 0
-SAVE_INTERVAL =1
+SAVE_INTERVAL = 1
 
 DATASET_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/data/next-day-wildfire-spread'
 SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
@@ -27,7 +27,7 @@ SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--master', default='uranus',
+    parser.add_argument('-m','--master', default='marlin',
                         help='master node')
     parser.add_argument('-p', '--port', default='30437',
                          help = 'master node')
@@ -52,31 +52,26 @@ def main():
     #########################################################
 
 
-
-def train(gpu, args):
-    rank = args.nr * args.gpus + gpu
-    validate = True
-    print("Current GPU", gpu,"\n RANK: ",rank)
+def create_data_loaders(rank, gpu, world_size):
     batch_size = 100
-    # Data loading code
 
     datasets = {
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 8, 11]
+            features=[0, 2, 4, 5, 8, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 8, 11]
+            features=[0, 2, 4, 5, 8, 11]
         )
     }
 
     samplers = {
         TRAIN: torch.utils.data.distributed.DistributedSampler(
             datasets[TRAIN],
-            num_replicas=args.world_size,
+            num_replicas=world_size,
             rank=rank
         )
     }
@@ -99,13 +94,42 @@ def train(gpu, args):
         )
     }
 
+    return dataLoaders
+
+
+def get_model_state_dict(filename):
+    state_dict = torch.load(f"{SAVE_MODEL_PATH}/{filename}", map_location=torch.device('cpu'))
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k[7:] # remove `module.`
+        new_state_dict[name] = v
+    return new_state_dict
+
+
+def pickle_loss_history(loss_history, filename):
+    with open(f"{SAVE_MODEL_PATH}/{filename}", "wb") as handle:
+        pickle.dump(loss_history, handle)
+    print(f"Successfully pickled the loss history in {SAVE_MODEL_PATH}/{filename}")
+
+
+def train(gpu, args):
+    rank = args.nr * args.gpus + gpu
+    validate = True
+    print("Current GPU", gpu,"\n RANK: ",rank)
+
+    dataLoaders = create_data_loaders(rank, gpu, args.world_size)
+
     torch.manual_seed(0)
 
-    
     #model = LogisticRegression(input_dim=12 * 32 * 32, output_dim=32 * 32)
     #model = BinaryClassifierCNN(in_channels=3, image_size=32)
     #model = ConvolutionalAutoencoder()
-    model = UNet(3, 1, True)
+    model = UNet(6, 1, True)
+
+    new_state_dict = get_model_state_dict(filename="model-UNet-bestLoss-Rank-0.weights")
+    model.load_state_dict(new_state_dict)
+
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     #criterion = nn.BCELoss().cuda(gpu)
@@ -119,11 +143,9 @@ def train(gpu, args):
         rank=rank
     )
 
-    model = nn.parallel.DistributedDataParallel(model,
-                                                device_ids=[gpu])
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     start = datetime.now()
-    total_step = len(dataLoaders[TRAIN])
     print(f'TRAINING ON: {platform.node()}, Starting at: {datetime.now()}')
 
     best_avg_loss_val = float("inf")
@@ -131,6 +153,8 @@ def train(gpu, args):
 
     train_loss_history = []
     val_loss_history = []
+
+    total_step = len(dataLoaders[TRAIN])
 
     for epoch in range(args.epochs):
         loss_train = 0
@@ -220,13 +244,8 @@ def train(gpu, args):
 
     print("Reached end of train function")
 
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-train-loss-Rank-{rank}.history', 'wb') as handle:
-        pickle.dump(train_loss_history, handle)
-    print("Successfully pickled the training loss history")
-
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-validation-loss-Rank-{rank}.history', 'wb') as handle:
-        pickle.dump(val_loss_history, handle)
-    print("Successfully pickled the validation loss history")
+    pickle_loss_history(train_loss_history, filename=f"model-{model.module.__class__.__name__}-train-loss-Rank-{rank}.history")
+    pickle_loss_history(validation_loss_history, filename=f"model-{model.module.__class__.__name__}-validation-loss-Rank-{rank}.history")
         
     if gpu == 0:
         print("Training complete in: " + str(datetime.now() - start))
