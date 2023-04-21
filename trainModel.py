@@ -26,17 +26,10 @@ SAVE_INTERVAL = 1
 DATASET_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/data/next-day-wildfire-spread'
 SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
 
-BEST_EPOCH = 0
-BEST_AVG_LOSS_VAL = float("inf")
-BEST_AVG_ACC_VAL = -float("inf")
-
-TRAIN_LOSS_HISTORY = []
-VAL_LOSS_HISTORY = []
-
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--master', default='marlin',
+    parser.add_argument('-m','--master', default='pollock',
                         help='master node')
     parser.add_argument('-p', '--port', default='30437',
                          help = 'master node')
@@ -68,12 +61,12 @@ def create_data_loaders(rank, gpu, world_size):
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 2, 4, 5, 8, 11]
+            features=[0, 8, 10, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 2, 4, 5, 8, 11]
+            features=[0, 8, 10, 11]
         )
     }
 
@@ -128,6 +121,9 @@ def perform_validation(model, loader):
     loss_val = 0
     acc_val = 0
     total_pixels = 0
+    total_tp = 0
+    total_fp = 0
+    total_fn = 0
             
     for i, (images, labels) in enumerate(loader):
         images = images.cuda(non_blocking=True)
@@ -147,11 +143,18 @@ def perform_validation(model, loader):
         loss_val += loss.item()
         acc_val += torch.sum(preds == labels.data)
         total_pixels += len(labels)
+        tn, fp, fn, tp = confusion_matrix(labels.cpu(), preds.cpu(), labels=[0,1]).ravel()
+        total_tp += tp
+        total_fp += fp
+        total_fn += fn
 
     curr_avg_loss_val = loss_val / len(loader)
     curr_avg_acc_val = 100 * acc_val / total_pixels
+    curr_precision = total_tp / (total_tp + total_fp)
+    curr_recall = total_tp / (total_tp + total_fn)
+    curr_f1_score = 2 * curr_precision * curr_recall / (curr_precision + curr_recall)
 
-    return curr_avg_loss_val, curr_avg_acc_val
+    return curr_avg_loss_val, curr_avg_acc_val, curr_precision, curr_recall, curr_f1_score
 
 
 def train(gpu, args):
@@ -163,7 +166,7 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    model = UNet(6, 1, True)
+    model = UNet(4, 1, True)
 
     # Uncomment the lines below to load in an old model if you would like to
     #new_state_dict = get_model_state_dict(filename="model-UNet-bestLoss-Rank-0.weights")
@@ -191,6 +194,7 @@ def train(gpu, args):
     best_epoch = 0
     best_avg_loss_val = float("inf")
     best_avg_acc_val = -float("inf")
+    best_f1_score = -float("inf")
 
     train_loss_history = []
     val_loss_history = []
@@ -232,18 +236,21 @@ def train(gpu, args):
         train_loss_history.append(loss_train / len(dataLoaders[TRAIN]))
     
         if validate:
-            curr_avg_loss_val, curr_avg_acc_val = perform_validation(model, dataLoaders[VAL])
+            curr_avg_loss_val, curr_avg_acc_val, curr_precision, curr_recall, curr_f1_score = perform_validation(model, dataLoaders[VAL])
 
             print(f"Average validation batch loss = {curr_avg_loss_val}")
             print(f"Validation acc = {curr_avg_acc_val}%")
+            print(f"Precision = {curr_precision}")
+            print(f"Recall = {curr_recall}")
+            print(f"F1 Score = {curr_f1_score}")
 
             val_loss_history.append(curr_avg_loss_val)
 
-            if best_avg_loss_val > curr_avg_loss_val:
+            if best_f1_score < curr_f1_score:
                 print("Saving model...")
                 best_epoch = epoch
-                best_avg_loss_val = curr_avg_loss_val
-                filename = f'model-{model.module.__class__.__name__}-bestLoss-Rank-{rank}.weights'
+                best_f1_score = curr_f1_score
+                filename = f'model-{model.module.__class__.__name__}-bestF1Score-Rank-{rank}.weights'
                 torch.save(model.state_dict(), f'{SAVE_MODEL_PATH}/{filename}')
                 print("Model has been saved!")
             else:
@@ -256,7 +263,7 @@ def train(gpu, args):
         print("Training complete in: " + str(datetime.now() - start))
         print(f"Endtime: {datetime.now()}")
         print(f"Best epoch: {best_epoch}")
-        print(f"Best avg loss: {best_avg_loss_val}")
+        print(f"Best F1 score: {best_f1_score}")
     
 
 if __name__ == '__main__':
