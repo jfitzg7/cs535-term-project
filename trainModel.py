@@ -3,7 +3,6 @@ from datetime import datetime
 import argparse
 import torch.multiprocessing as mp
 import torchvision
-import torchvision.transforms as transforms
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -138,7 +137,8 @@ def perform_validation(model, loader):
         threshold = 0.5
         preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
 
-        loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
+        loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.8, gamma=1, reduction="mean")
+        #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
         loss_val += loss.item()
         acc_val += torch.sum(preds == labels.data)
@@ -147,7 +147,8 @@ def perform_validation(model, loader):
         total_tp += tp
         total_fp += fp
         total_fn += fn
-
+    
+    print(f"Validation - tp={tp} fp={fp} fn={fn} tn={tn}")
     curr_avg_loss_val = loss_val / len(loader)
     curr_avg_acc_val = 100 * acc_val / total_pixels
     curr_precision = total_tp / (total_tp + total_fp)
@@ -175,7 +176,7 @@ def train(gpu, args):
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([75])).cuda(gpu)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([50])).cuda(gpu)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -215,7 +216,8 @@ def train(gpu, args):
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
 
-            loss = criterion(outputs, labels)
+            #loss = criterion(outputs, labels)
+            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.8, gamma=1, reduction="mean")
 
             loss_train += loss.item()
 
