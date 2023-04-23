@@ -60,12 +60,12 @@ def create_data_loaders(rank, gpu, world_size):
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 8, 10, 11]
+            features=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 8, 10, 11]
+            features=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         )
     }
 
@@ -137,7 +137,8 @@ def perform_validation(model, loader):
         threshold = 0.5
         preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
 
-        loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.8, gamma=1, reduction="mean")
+        #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([4]).cuda())
         #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
         loss_val += loss.item()
@@ -167,7 +168,8 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    model = UNet(4, 1, True)
+    model = UNet(11, 1)
+    #model = BinaryClassifierCNN(11, 32)
 
     # Uncomment the lines below to load in an old model if you would like to
     #new_state_dict = get_model_state_dict(filename="model-UNet-bestLoss-Rank-0.weights")
@@ -176,7 +178,7 @@ def train(gpu, args):
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([50])).cuda(gpu)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([4])).cuda(gpu)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -216,8 +218,8 @@ def train(gpu, args):
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
 
-            #loss = criterion(outputs, labels)
-            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.8, gamma=1, reduction="mean")
+            loss = criterion(outputs, labels)
+            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
 
             loss_train += loss.item()
 
