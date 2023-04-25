@@ -1,11 +1,11 @@
 import argparse
 import os
 import subprocess
-filename = '/s/chopin/a/grad/jeyost/School/CS535/FinalProject/trainModel.py'
+filename = '/s/babbage/b/nobackup/nblancha/eseefrie/cs535-term-project/trainModel.py'
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--master', default='mars')
-    parser.add_argument('-p', '--port', default='7669')
+    parser.add_argument('-p', '--port', default='6001')
     parser.add_argument('-n', '--nodes', default="earth",
                         help='list of nodes, no master')
     parser.add_argument('--epochs', default=1, type=int,
