@@ -12,7 +12,8 @@ import platform
 import copy
 import numpy as np
 from torch.utils.data import Dataset, IterableDataset, DataLoader
-from unet_model import UNet
+#from milesial_unet_model import UNet
+from leejunhyun_unet_models import U_Net, R2U_Net, AttU_Net, R2AttU_Net
 from sklearn.metrics import confusion_matrix
 
 
@@ -60,12 +61,12 @@ def create_data_loaders(rank, gpu, world_size):
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         )
     }
 
@@ -123,38 +124,38 @@ def perform_validation(model, loader):
     total_tp = 0
     total_fp = 0
     total_fn = 0
-            
-    for i, (images, labels) in enumerate(loader):
-        images = images.cuda(non_blocking=True)
-        labels = labels.cuda(non_blocking=True)
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(loader):
+            images = images.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
 
-        # Forward pass
-        outputs = model(images)
+            # Forward pass
+            outputs = model(images)
 
-        labels = torch.flatten(labels)
-        outputs = torch.flatten(outputs)
+            labels = torch.flatten(labels)
+            outputs = torch.flatten(outputs)
 
-        threshold = 0.5
-        preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
+            threshold = 0.5
+            preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
 
-        #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
-        loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([4]).cuda())
-        #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
+            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([4]).cuda())
+            #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
-        loss_val += loss.item()
-        acc_val += torch.sum(preds == labels.data)
-        total_pixels += len(labels)
-        tn, fp, fn, tp = confusion_matrix(labels.cpu(), preds.cpu(), labels=[0,1]).ravel()
-        total_tp += tp
-        total_fp += fp
-        total_fn += fn
+            loss_val += loss.item()
+            acc_val += torch.sum(preds == labels.data)
+            total_pixels += len(labels)
+            tn, fp, fn, tp = confusion_matrix(labels.cpu(), preds.cpu(), labels=[0,1]).ravel()
+            total_tp += tp
+            total_fp += fp
+            total_fn += fn
     
-    print(f"Validation - tp={tp} fp={fp} fn={fn} tn={tn}")
-    curr_avg_loss_val = loss_val / len(loader)
-    curr_avg_acc_val = 100 * acc_val / total_pixels
-    curr_precision = total_tp / (total_tp + total_fp)
-    curr_recall = total_tp / (total_tp + total_fn)
-    curr_f1_score = 2 * curr_precision * curr_recall / (curr_precision + curr_recall)
+        print(f"Validation - tp={tp} fp={fp} fn={fn} tn={tn}")
+        curr_avg_loss_val = loss_val / len(loader)
+        curr_avg_acc_val = 100 * acc_val / total_pixels
+        curr_precision = total_tp / (total_tp + total_fp)
+        curr_recall = total_tp / (total_tp + total_fn)
+        curr_f1_score = 2 * curr_precision * curr_recall / (curr_precision + curr_recall)
 
     return curr_avg_loss_val, curr_avg_acc_val, curr_precision, curr_recall, curr_f1_score
 
@@ -168,7 +169,10 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    model = UNet(11, 1)
+    #model = U_Net(12, 1)
+    model = R2U_Net(12, 1)
+    #model = AttU_Net(12, 1)
+    #model = R2AttU_Net(12, 1)
     #model = BinaryClassifierCNN(11, 32)
 
     # Uncomment the lines below to load in an old model if you would like to
@@ -218,8 +222,8 @@ def train(gpu, args):
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
 
-            loss = criterion(outputs, labels)
-            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            #loss = criterion(outputs, labels)
+            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
 
             loss_train += loss.item()
 

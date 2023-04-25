@@ -42,7 +42,7 @@ class Down(nn.Module):
         return self.maxpool_conv(x)
     
 
-class AttentionGate(nn.Module):
+class AttentionUp(nn.Module):
     def __init__(self):
         pass
     
