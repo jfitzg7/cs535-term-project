@@ -55,7 +55,7 @@ def main():
 
 
 def create_data_loaders(rank, gpu, world_size):
-    batch_size = 50
+    batch_size = 32
 
     datasets = {
         TRAIN: RotatedWildfireDataset(
@@ -170,9 +170,9 @@ def train(gpu, args):
     torch.manual_seed(0)
 
     #model = U_Net(12, 1)
-    model = R2U_Net(12, 1)
+    #model = R2U_Net(12, 1)
     #model = AttU_Net(12, 1)
-    #model = R2AttU_Net(12, 1)
+    model = R2AttU_Net(12, 1)
     #model = BinaryClassifierCNN(11, 32)
 
     # Uncomment the lines below to load in an old model if you would like to
