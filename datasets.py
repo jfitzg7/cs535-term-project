@@ -48,7 +48,7 @@ def find_good_samples(labels, crop_map, crop_size):
 class WildfireDataset(torch.utils.data.Dataset):
     def __init__(self, data_filename, labels_filename, features=None):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
-        self.crop_size = 64
+        self.crop_size = 32
 
         random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
@@ -88,7 +88,7 @@ class RotatedWildfireDataset(torch.utils.data.Dataset):
     # This dataset probably doesn't work if you use the wind direction feature
     def __init__(self, data_filename, labels_filename, features=None):
         self.data, self.labels = unpickle(data_filename), unpickle(labels_filename)
-        self.crop_size = 64
+        self.crop_size = 32
 
         random.seed(1)
         self.crop_map, self.good_indices = new_random_crop(self.labels, self.crop_size)
