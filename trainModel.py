@@ -55,7 +55,7 @@ def main():
 
 
 def create_data_loaders(rank, gpu, world_size):
-    batch_size = 32
+    batch_size = 50
 
     datasets = {
         TRAIN: RotatedWildfireDataset(
