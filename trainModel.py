@@ -138,8 +138,8 @@ def perform_validation(model, loader):
             threshold = 0.5
             preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
 
-            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
-            #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([4]).cuda())
+            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([5]).cuda())
             #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
             loss_val += loss.item()
@@ -182,7 +182,7 @@ def train(gpu, args):
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([4])).cuda(gpu)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5])).cuda(gpu)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -222,8 +222,8 @@ def train(gpu, args):
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
 
-            #loss = criterion(outputs, labels)
-            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            loss = criterion(outputs, labels)
+            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
 
             loss_train += loss.item()
 
