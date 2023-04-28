@@ -3,23 +3,25 @@ from datetime import datetime
 import argparse
 import torch.multiprocessing as mp
 import torchvision
-import torchvision.transforms as transforms
 import torch
 import torch.nn as nn
 import torch.distributed as dist
 from models import *
-from datasets2 import *
+from datasets import *
 import platform
 import copy
 import numpy as np
 from torch.utils.data import Dataset, IterableDataset, DataLoader
-from unet_model import UNet
+#from milesial_unet_model import UNet
+from leejunhyun_unet_models import U_Net, R2U_Net, AttU_Net, R2AttU_Net
+from sklearn.metrics import confusion_matrix
+
 
 TRAIN = 'train'
 VAL = 'validation'
 
 MASTER_RANK = 0
-SAVE_INTERVAL =1
+SAVE_INTERVAL = 1
 
 DATASET_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/data/next-day-wildfire-spread'
 SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
@@ -27,7 +29,7 @@ SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--master', default='uranus',
+    parser.add_argument('-m','--master', default='pollock',
                         help='master node')
     parser.add_argument('-p', '--port', default='30437',
                          help = 'master node')
@@ -52,31 +54,26 @@ def main():
     #########################################################
 
 
-
-def train(gpu, args):
-    rank = args.nr * args.gpus + gpu
-    validate = True
-    print("Current GPU", gpu,"\n RANK: ",rank)
-    batch_size = 100
-    # Data loading code
+def create_data_loaders(rank, gpu, world_size):
+    batch_size = 50
 
     datasets = {
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 8, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 8, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         )
     }
 
     samplers = {
         TRAIN: torch.utils.data.distributed.DistributedSampler(
             datasets[TRAIN],
-            num_replicas=args.world_size,
+            num_replicas=world_size,
             rank=rank
         )
     }
@@ -99,17 +96,93 @@ def train(gpu, args):
         )
     }
 
+    return dataLoaders
+
+
+def get_model_state_dict(filename):
+    state_dict = torch.load(f"{SAVE_MODEL_PATH}/{filename}", map_location=torch.device('cpu'))
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k[7:] # remove `module.`
+        new_state_dict[name] = v
+    return new_state_dict
+
+
+def pickle_loss_history(loss_history, filename):
+    with open(f"{SAVE_MODEL_PATH}/{filename}", "wb") as handle:
+        pickle.dump(loss_history, handle)
+    print(f"Successfully pickled the loss history in {SAVE_MODEL_PATH}/{filename}")
+
+
+def perform_validation(model, loader):
+    model.eval()
+
+    loss_val = 0
+    acc_val = 0
+    total_pixels = 0
+    total_tp = 0
+    total_fp = 0
+    total_fn = 0
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(loader):
+            images = images.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
+
+            # Forward pass
+            outputs = model(images)
+
+            labels = torch.flatten(labels)
+            outputs = torch.flatten(outputs)
+
+            threshold = 0.5
+            preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
+
+            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([5]).cuda())
+            #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
+
+            loss_val += loss.item()
+            acc_val += torch.sum(preds == labels.data)
+            total_pixels += len(labels)
+            tn, fp, fn, tp = confusion_matrix(labels.cpu(), preds.cpu(), labels=[0,1]).ravel()
+            total_tp += tp
+            total_fp += fp
+            total_fn += fn
+    
+        print(f"Validation - tp={tp} fp={fp} fn={fn} tn={tn}")
+        curr_avg_loss_val = loss_val / len(loader)
+        curr_avg_acc_val = 100 * acc_val / total_pixels
+        curr_precision = total_tp / (total_tp + total_fp)
+        curr_recall = total_tp / (total_tp + total_fn)
+        curr_f1_score = 2 * curr_precision * curr_recall / (curr_precision + curr_recall)
+
+    return curr_avg_loss_val, curr_avg_acc_val, curr_precision, curr_recall, curr_f1_score
+
+
+def train(gpu, args):
+    rank = args.nr * args.gpus + gpu
+    validate = True
+    print("Current GPU", gpu,"\n RANK: ",rank)
+
+    dataLoaders = create_data_loaders(rank, gpu, args.world_size)
+
     torch.manual_seed(0)
 
-    
-    #model = LogisticRegression(input_dim=12 * 32 * 32, output_dim=32 * 32)
-    #model = BinaryClassifierCNN(in_channels=3, image_size=32)
-    #model = ConvolutionalAutoencoder()
-    model = UNet(3, 1, True)
+    model = U_Net(12, 1)
+    #model = R2U_Net(12, 1)
+    #model = AttU_Net(12, 1)
+    #model = R2AttU_Net(12, 1)
+    #model = BinaryClassifierCNN(11, 32)
+
+    # Uncomment the lines below to load in an old model if you would like to
+    #new_state_dict = get_model_state_dict(filename="model-UNet-bestLoss-Rank-0.weights")
+    #model.load_state_dict(new_state_dict)
+
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
-    #criterion = nn.BCELoss().cuda(gpu)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([75])).cuda(gpu) # This is for UNet
+
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([5])).cuda(gpu)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001, momentum=0.9)
 
     dist.init_process_group(
@@ -119,27 +192,28 @@ def train(gpu, args):
         rank=rank
     )
 
-    model = nn.parallel.DistributedDataParallel(model,
-                                                device_ids=[gpu])
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     start = datetime.now()
-    total_step = len(dataLoaders[TRAIN])
     print(f'TRAINING ON: {platform.node()}, Starting at: {datetime.now()}')
 
+    total_step = len(dataLoaders[TRAIN])
+    best_epoch = 0
     best_avg_loss_val = float("inf")
     best_avg_acc_val = -float("inf")
+    best_f1_score = -float("inf")
 
     train_loss_history = []
     val_loss_history = []
 
     for epoch in range(args.epochs):
+        model.train()
+
         loss_train = 0
-        total_samples_seen = 0
+
         for i, (images, labels) in enumerate(dataLoaders[TRAIN]):
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
-
-            total_samples_seen += len(images)
 
             # Forward pass
             outputs = model(images)
@@ -147,7 +221,9 @@ def train(gpu, args):
             # Not entirely sure if this flattening is required or not
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
+
             loss = criterion(outputs, labels)
+            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
 
             loss_train += loss.item()
 
@@ -157,80 +233,45 @@ def train(gpu, args):
             optimizer.step()
 
             if i % 20 == 0:
-                print('Epoch [{}/{}], Steps [{}/{}], Samples processed {}, Loss: {:.4f}'.format(
+                print('Epoch [{}/{}], Steps [{}/{}], Loss: {:.4f}'.format(
                     epoch + 1,
                     args.epochs,
                     i,
                     total_step,
-                    total_samples_seen,
                     loss.item())
                 )
 
         train_loss_history.append(loss_train / len(dataLoaders[TRAIN]))
     
         if validate:
-            loss_val = 0
-            acc_val = 0
-            total_pixels = 0
-            
-            val_loader = dataLoaders[VAL]
-            for i, (images, labels) in enumerate(val_loader):
-                k = len(val_loader) // 4
-
-                # if i % k == 0:
-                #         print("\rValidation batch {}/{}".format(i, len(val_loader)))
-
-                images = images.cuda(non_blocking=True)
-                labels = labels.cuda(non_blocking=True)
-
-                # Forward pass
-                outputs = model(images)
-
-                labels = torch.flatten(labels)
-                outputs = torch.flatten(outputs)
-
-                # if probability > 0.5 then fire is predicted, otherwise no fire
-                preds = torch.round(torch.sigmoid(outputs)) # UNet output isn't going through sigmoid, loss func handles it
-                #preds = torch.round(outputs)
-
-                #loss = criterion(outputs, labels)
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
-
-                loss_val += loss.item() # batch loss
-                acc_val += torch.sum(preds == labels.data)
-                total_pixels += len(labels)
-            
-            curr_avg_loss_val = loss_val / len(val_loader)
-            curr_avg_acc_val = 100 * acc_val / total_pixels
-
-            val_loss_history.append(curr_avg_loss_val)
+            curr_avg_loss_val, curr_avg_acc_val, curr_precision, curr_recall, curr_f1_score = perform_validation(model, dataLoaders[VAL])
 
             print(f"Average validation batch loss = {curr_avg_loss_val}")
             print(f"Validation acc = {curr_avg_acc_val}%")
+            print(f"Precision = {curr_precision}")
+            print(f"Recall = {curr_recall}")
+            print(f"F1 Score = {curr_f1_score}")
 
-            if(best_avg_loss_val > curr_avg_loss_val and epoch % SAVE_INTERVAL == 0):
-                # save model
+            val_loss_history.append(curr_avg_loss_val)
+
+            if best_f1_score < curr_f1_score:
                 print("Saving model...")
-                best_avg_loss_val = curr_avg_loss_val
-                filename = f'model-{model.module.__class__.__name__}-bestLoss-Rank-{rank}.weights'
+                best_epoch = epoch
+                best_f1_score = curr_f1_score
+                filename = f'model-{model.module.__class__.__name__}-bestF1Score-Rank-{rank}.weights'
                 torch.save(model.state_dict(), f'{SAVE_MODEL_PATH}/{filename}')
                 print("Model has been saved!")
             else:
                 print("Model is not being saved")
 
-    print("Reached end of train function")
-
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-train-loss-Rank-{rank}.history', 'wb') as handle:
-        pickle.dump(train_loss_history, handle)
-    print("Successfully pickled the training loss history")
-
-    with open(f'{SAVE_MODEL_PATH}/model-{model.module.__class__.__name__}-validation-loss-Rank-{rank}.history', 'wb') as handle:
-        pickle.dump(val_loss_history, handle)
-    print("Successfully pickled the validation loss history")
+    pickle_loss_history(train_loss_history, filename=f"model-{model.module.__class__.__name__}-train-loss-Rank-{rank}.history")
+    pickle_loss_history(val_loss_history, filename=f"model-{model.module.__class__.__name__}-validation-loss-Rank-{rank}.history")
         
     if gpu == 0:
         print("Training complete in: " + str(datetime.now() - start))
         print(f"Endtime: {datetime.now()}")
+        print(f"Best epoch: {best_epoch}")
+        print(f"Best F1 score: {best_f1_score}")
     
 
 if __name__ == '__main__':
