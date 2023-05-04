@@ -61,12 +61,14 @@ def create_data_loaders(rank, gpu, world_size):
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            crop_size=64
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            crop_size=64
         )
     }
 
