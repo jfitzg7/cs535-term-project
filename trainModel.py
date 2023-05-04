@@ -13,7 +13,7 @@ import copy
 import numpy as np
 from torch.utils.data import Dataset, IterableDataset, DataLoader
 #from milesial_unet_model import UNet
-from leejunhyun_unet_models import U_Net, R2U_Net, AttU_Net, R2AttU_Net
+from leejunhyun_unet_models import U_Net, R2U_Net, AttU_Net, R2AttU_Net, AttU_Net_S
 from sklearn.metrics import confusion_matrix
 
 
@@ -29,7 +29,7 @@ SAVE_MODEL_PATH = '/s/chopin/b/grad/jhfitzg/cs535-term-project/savedModels'
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--master', default='pollock',
+    parser.add_argument('-m','--master', default='sardine',
                         help='master node')
     parser.add_argument('-p', '--port', default='30437',
                          help = 'master node')
@@ -124,6 +124,7 @@ def perform_validation(model, loader):
     total_tp = 0
     total_fp = 0
     total_fn = 0
+    total_tn = 0
     with torch.no_grad():
         for i, (images, labels) in enumerate(loader):
             images = images.cuda(non_blocking=True)
@@ -138,8 +139,8 @@ def perform_validation(model, loader):
             threshold = 0.5
             preds = torch.where(torch.sigmoid(outputs) > threshold, 1, 0)
 
-            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([5]).cuda())
+            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels, pos_weight=torch.Tensor([5]).cuda())
             #loss = torch.nn.functional.binary_cross_entropy_with_logits(outputs, labels)
 
             loss_val += loss.item()
@@ -149,8 +150,9 @@ def perform_validation(model, loader):
             total_tp += tp
             total_fp += fp
             total_fn += fn
+            total_tn += tn
     
-        print(f"Validation - tp={tp} fp={fp} fn={fn} tn={tn}")
+        print(f"Validation - tp={total_tp} fp={total_fp} fn={total_fn} tn={total_tn}")
         curr_avg_loss_val = loss_val / len(loader)
         curr_avg_acc_val = 100 * acc_val / total_pixels
         curr_precision = total_tp / (total_tp + total_fp)
@@ -169,7 +171,8 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    model = U_Net(12, 1)
+    model = AttU_Net_S(12, 1)
+    #model = U_Net(12, 1)
     #model = R2U_Net(12, 1)
     #model = AttU_Net(12, 1)
     #model = R2AttU_Net(12, 1)
@@ -222,8 +225,8 @@ def train(gpu, args):
             labels = torch.flatten(labels)
             outputs = torch.flatten(outputs)
 
-            loss = criterion(outputs, labels)
-            #loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
+            #loss = criterion(outputs, labels)
+            loss = torchvision.ops.sigmoid_focal_loss(outputs, labels, alpha=0.85, gamma=2, reduction="mean")
 
             loss_train += loss.item()
 
