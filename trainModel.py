@@ -61,14 +61,14 @@ def create_data_loaders(rank, gpu, world_size):
         TRAIN: RotatedWildfireDataset(
             f"{DATASET_PATH}/{TRAIN}.data",
             f"{DATASET_PATH}/{TRAIN}.labels",
-            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            crop_size=64
+            features=[0, 2, 5, 7, 8, 9, 11],
+            crop_size=32
         ),
         VAL: WildfireDataset(
             f"{DATASET_PATH}/{VAL}.data",
             f"{DATASET_PATH}/{VAL}.labels",
-            features=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            crop_size=64
+            features=[0, 2, 5, 7, 8, 9, 11],
+            crop_size=32
         )
     }
 
@@ -173,7 +173,7 @@ def train(gpu, args):
 
     torch.manual_seed(0)
 
-    model = AttU_Net_S(12, 1)
+    model = AttU_Net_S(7, 1)
     #model = U_Net(12, 1)
     #model = R2U_Net(12, 1)
     #model = AttU_Net(12, 1)
